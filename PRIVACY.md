@@ -1,6 +1,6 @@
 # Privacy policy
 
-_Last updated: November 14, 2026_
+_Last updated: November 15, 2026_
 
 model-share is a Claude Code mod that runs entirely on your own computer. It collects no data about you, and it sends nothing anywhere.
 
@@ -11,9 +11,10 @@ model-share is a Claude Code mod that runs entirely on your own computer. It col
 
 ## What it stores
 
-Two values, in Claude Code's own per-plugin storage on your computer:
+Three values, in Claude Code's own per-plugin storage on your computer:
 
-- your auto-refresh setting, and
+- your auto-refresh setting,
+- whether the In / out token split is shown, and
 - the last weekly limit percentage a session saw (so clients that don't receive it can still show it).
 
 It keeps no usage history: totals are recounted from your session files each time and shown on screen only.
@@ -24,7 +25,7 @@ Nothing. The mod makes no network requests, has no analytics or telemetry, and s
 
 ## Removing it
 
-Uninstalling the mod (`claude plugin uninstall model-share`) stops it from running. The two stored values are part of Claude Code's plugin data on your computer.
+Uninstalling the mod (`claude plugin uninstall model-share`) stops it from running. The three stored values are part of Claude Code's plugin data on your computer.
 
 ## Contact
 

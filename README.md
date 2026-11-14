@@ -18,6 +18,7 @@ Think of your week like distance driven: if you've driven 10 km, how much of it 
   green when you're using it no faster than the week is passing, amber when slightly ahead, red when you'd run out more than a day before the reset. The line under it says when you'd hit 100% at this rate.
 - **Your weekly window** — when it started and when it resets (it follows your plan's 7-day reset, e.g. Thursday 7:30 PM to Thursday 7:30 PM), and resets with it.
 - **Share per model** — each model's share of everything you used this week (adding up to 100%), with its token count.
+- **Input / output split** — press **In / out** to see each model's input, output and cached tokens (e.g. `in 2.2M · out 386k · cached 79.6M`), handy for spotting which model writes the most.
 - **Status line** — a one-line summary under the prompt: `This week (59% used): Fable 37% · Sonnet 34% · Opus 29%`.
 
 It works in the Claude Code terminal, the Claude desktop app's Code tab and the VS Code extension.
@@ -60,6 +61,7 @@ claude plugin uninstall model-share
 
 - The **Model share** pane opens on its own when a session starts. Closed it? Type `/model-share`.
 - **Refresh** recounts now.
+- **In / out** shows or hides each model's input, output and cached tokens. Remembered across sessions.
 - **Auto refresh** picks how often it recounts while a session is open: 1, 3 (default), 5 or 10 minutes, or Off. Your choice is remembered across sessions.
 - Or by command: `/model-share every 5m` (also `every 90s`, `every off`; 30 seconds at least).
 
@@ -86,7 +88,7 @@ python3 -I <plugin folder>/hooks/scan.py <week start>
 
 **What it sends.** Nothing. The mod makes no network requests and sends no data anywhere. What it works out is shown only on your screen, in its pane and the status line.
 
-**What it stores.** Two values in Claude Code's own per-plugin storage on your computer: your auto-refresh choice, and the last weekly limit % a session saw (so clients that don't receive it, like the VS Code extension, can still show it).
+**What it stores.** Three values in Claude Code's own per-plugin storage on your computer: your auto-refresh choice, whether the In / out split is shown, and the last weekly limit % a session saw (so clients that don't receive it, like the VS Code extension, can still show it).
 
 **What it hooks.** The mod adds a pane, a status line and one command. It doesn't change your prompts, Claude's replies or any tool call:
 
