@@ -17,5 +17,9 @@
     "pane",
     "mod"
   ],
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "documentationUrl": "https://github.com/shubhamverma8991/claude-model-share#readme",
+  "supportUrl": "https://github.com/shubhamverma8991/claude-model-share/issues",
+  "privacyPolicyUrl": "https://github.com/shubhamverma8991/claude-model-share/blob/main/PRIVACY.md",
+  "termsOfServiceUrl": "https://github.com/shubhamverma8991/claude-model-share/blob/main/LICENSE"
 }
