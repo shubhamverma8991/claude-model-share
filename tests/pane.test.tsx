@@ -1,0 +1,114 @@
+import { expect, test } from 'claude-code/testing'
+
+const PANE = {
+  plugin: 'model-share',
+  component: 'Pane',
+  requestId: 'model-share',
+  props: {
+    title: 'Model share',
+    isFocused: false,
+    bodyColumns: 40,
+    placement: 'dock',
+    scroll: { offset: 0, bodyRows: 40 },
+    view: {},
+  },
+} as const
+
+const SCAN = {"models": {"claude-opus-5-5": 5630816.899999999, "claude-fable-5-2": 8134257.100000002, "claude-sonnet-5-5": 7094939.8}, "files": 31, "start": 1794492000000}
+
+test('the pane shows each model with its share, on every surface', async ($, on) => {
+  on('command.register', () => ({ value: { command: 'model-share' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.usage', () => ({
+    value: {
+      startedAt: 0,
+      context: {},
+      rateLimits: [{ kind: 'seven_day', percentUsed: 59, resetsAt: '2026-11-19T14:00:00.000Z' }],
+    },
+  }))
+  on('process.run', () => ({ value: { exitCode: 0, stdout: JSON.stringify(SCAN), stderr: '' } }))
+  on('ui.status', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('clock.now', () => ({ value: Date.parse('2026-11-14T14:00:00.000Z') }))
+
+  const ran = await $.command.run({ command: 'model-share', args: '' })
+  expect(ran.text).toContain('Fable 5.2')
+
+  for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    expect((await ui.find({ type: 'Text', text: /^Fable 5\.2$/ }))?.text).toBe('Fable 5.2')
+    expect((await ui.find({ type: 'Text', text: /resets in/ }))?.text).toBe('resets in 5d 0h')
+    expect(await ui.find({ type: 'Text', text: /^59%$/ })).toBeTruthy()
+    // The limit meter: 59% used with 29% of the week gone is well ahead of
+    // pace. No second bar for the week itself.
+    expect(await ui.find({ type: 'Text', text: /^Used$/ })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: /^Week$/ })).toBeFalsy()
+    expect(await ui.find({ type: 'Text', text: /Ahead of pace · hits 100%/ })).toBeTruthy()
+    // Each model's share of what was used: the week's usage is the whole.
+    const shares = (await ui.findAll({ type: 'Text', text: /^\d+%$/ }))
+      .map(t => Number(t.text.slice(0, -1)))
+      .slice(-3) // the last three; the limit's 59% comes first
+    expect(shares).toEqual([39, 34, 27])
+    expect(shares.reduce((a, b) => a + b, 0)).toBe(100)
+    await ui.unmount()
+  }
+})
+
+test('a client without the limit shows the one another session saw', async ($, on) => {
+  on('command.register', () => ({ value: { command: 'model-share' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.status', () => ({ value: undefined }))
+  on('session.usage', () => ({
+    value: {
+      startedAt: 0,
+      context: {},
+      rateLimits: [{ kind: 'seven_day', percentUsed: undefined, resetsAt: '2026-11-19T14:00:00.000Z' }],
+    },
+  }))
+  on('store.get', () => ({
+    value: { weekPct: 59, resetsAt: '2026-11-19T14:00:00.000Z', at: Date.parse('2026-11-14T13:55:00.000Z') },
+  }))
+  on('process.run', () => ({ value: { exitCode: 0, stdout: JSON.stringify(SCAN), stderr: '' } }))
+  on('clock.now', () => ({ value: Date.parse('2026-11-14T14:00:00.000Z') }))
+
+  await $.command.run({ command: 'model-share', args: '' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
+  expect(await ui.find({ type: 'Text', text: /^59%$/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /limit as of/ })).toBeTruthy()
+  await ui.unmount()
+})
+
+test('the pane says it is counting before the first scan', async ($) => {
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect((await ui.find({ type: 'Text' }))?.text).toMatch(/Counting/)
+  await ui.unmount()
+})
+
+test('the auto-refresh interval can be changed and is saved', async ($, on) => {
+  const saved: Record<string, unknown> = {}
+  on('command.register', () => ({ value: { command: 'model-share' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.status', () => ({ value: undefined }))
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', (_, e) => {
+    saved[e.key] = e.value
+    return { value: undefined }
+  })
+  on('clock.every', () => ({ value: { cancel: () => {} } }))
+  on('clock.now', () => ({ value: Date.parse('2026-11-14T14:00:00.000Z') }))
+  on('session.usage', () => ({ value: { startedAt: 0, context: {}, rateLimits: [] } }))
+  on('process.run', () => ({ value: { exitCode: 0, stdout: JSON.stringify(SCAN), stderr: '' } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const set = await $.command.run({ command: 'model-share', args: 'every 5m' })
+  expect(set.text).toBe('Model share auto refresh: every 5m.')
+  expect(saved.refreshMs).toBe(300_000)
+
+  const off = await $.command.run({ command: 'model-share', args: 'every off' })
+  expect(off.text).toBe('Model share auto refresh: off.')
+  expect(saved.refreshMs).toBe(0)
+
+  const tooFast = await $.command.run({ command: 'model-share', args: 'every 5s' })
+  expect(tooFast.text).toBe('Model share: pick 30s or more.')
+})
