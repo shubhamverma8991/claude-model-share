@@ -70,8 +70,33 @@ It also recounts after every Claude reply and whenever your weekly limit figure 
 Claude Code saves each session as a file under `~/.claude/projects/` (or `$CLAUDE_CONFIG_DIR/projects/`), and every reply in it records the model and the tokens it used. The mod runs a small Python script ([`hooks/scan.py`](hooks/scan.py)) that reads this week's session files — all projects, subagents included — counts each reply once, and adds up the tokens per model. The weekly window and limit come from Claude Code itself.
 
 - **No tokens used.** Refreshing only reads local files; it never calls a model.
-- **Nothing leaves your computer.** No network requests.
 - **Fast.** A recount takes a fraction of a second.
+
+## Privacy and what the mod does on your computer
+
+**The one program it runs.** The mod starts exactly one program, and only this command:
+
+```
+python3 -I <plugin folder>/hooks/scan.py <week start>
+```
+
+`hooks/scan.py` is the script in this repository. Its only argument is the start of your weekly window (a number, or `auto`), and it runs in Python's isolated mode (`-I`). The mod starts it when a session opens, after each Claude reply, when your weekly limit figure changes, on **Refresh**, and on the auto-refresh timer. It never runs any other program and never runs code it downloads.
+
+**What it reads.** Your Claude Code session files under `~/.claude/projects/` (or `$CLAUDE_CONFIG_DIR/projects/`). These files hold your conversations. The script reads only the records of Claude's replies, and from each one keeps only the model name, the four token counts, the timestamp and the reply's ID (to count each reply once). It never keeps, prints or passes on message text. It prints one small JSON result: total tokens per model and the number of files read. The mod also reads your weekly limit figure from Claude Code.
+
+**What it sends.** Nothing. The mod makes no network requests and sends no data anywhere. What it works out is shown only on your screen, in its pane and the status line.
+
+**What it stores.** Two values in Claude Code's own per-plugin storage on your computer: your auto-refresh choice, and the last weekly limit % a session saw (so clients that don't receive it, like the VS Code extension, can still show it).
+
+**What it hooks.** The mod adds a pane, a status line and one command. It doesn't change your prompts, Claude's replies or any tool call:
+
+| Hook | What it does |
+| --- | --- |
+| `session.start` | Registers `/model-share`, opens the pane, starts the auto-refresh timer, counts once. |
+| `session.measure` | Recounts when your weekly limit figure changes. |
+| `turn.complete` | Recounts after each reply. The reply passes through unchanged. |
+| `command.run` (only `/model-share`) | Answers its own command: opens the pane, or sets the auto-refresh interval. Other commands pass through untouched. |
+| `ui.render` (only its own pane) | Draws the Model share pane. |
 
 ## Limits
 
@@ -82,17 +107,7 @@ Claude Code saves each session as a file under `~/.claude/projects/` (or `$CLAUD
 
 ## Develop
 
-```bash
-git clone https://github.com/shubhamverma8991/claude-model-share
-claude --plugin-dir ./claude-model-share
-```
-
-Edits reload when you save. Check and test with:
-
-```bash
-claude plugin validate ./claude-model-share
-claude plugin test ./claude-model-share
-```
+To work on the mod, clone this repository and start Claude Code with `--plugin-dir` pointing at the folder; edits reload when you save. Check your changes with `claude plugin validate` and `claude plugin test` on the same folder.
 
 ## License
 
