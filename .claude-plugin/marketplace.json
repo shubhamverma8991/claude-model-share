@@ -1,0 +1,15 @@
+{
+  "name": "claude-model-share",
+  "description": "model-share: see which models your weekly Claude Code usage went to.",
+  "owner": {
+    "name": "shubhamverma8991",
+    "url": "https://github.com/shubhamverma8991"
+  },
+  "plugins": [
+    {
+      "name": "model-share",
+      "source": "./",
+      "description": "A pane showing which models your weekly Claude Code usage went to, with your weekly limit and pace."
+    }
+  ]
+}
