@@ -1,4 +1,7 @@
-export type ModelRow = { name: string; pct: number; tokens: number }
+/** Raw token counts: input is fresh input plus cache writes; cached is cache reads. */
+export type TokenSplit = { input: number; output: number; cached: number }
+
+export type ModelRow = { name: string; pct: number; tokens: number; split?: TokenSplit }
 
 export type Snapshot = {
   rows: ModelRow[]
@@ -17,6 +20,6 @@ export type Snapshot = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'model-share': { snapshot: Shaped<Snapshot | null>; refreshMs: number }
+    'model-share': { snapshot: Shaped<Snapshot | null>; refreshMs: number; showSplit: boolean }
   }
 }

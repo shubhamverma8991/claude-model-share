@@ -112,3 +112,31 @@ test('the auto-refresh interval can be changed and is saved', async ($, on) => {
   const tooFast = await $.command.run({ command: 'model-share', args: 'every 5s' })
   expect(tooFast.text).toBe('Model share: pick 30s or more.')
 })
+
+const SPLIT_SCAN = {"models": {"claude-opus-5-5": 10726238.099999994, "claude-fable-5-2": 8134257.100000002, "claude-sonnet-5-5": 7401049.300000002}, "split": {"claude-opus-5-5": {"input": 2222315, "output": 390896, "cached": 81130271}, "claude-fable-5-2": {"input": 1990422, "output": 324972, "cached": 58188631}, "claude-sonnet-5-5": {"input": 2373003, "output": 347723, "cached": 46803233}}, "files": 31, "start": 1794492000000}
+
+test('In / out shows each model\'s input, output and cached tokens, and is saved', async ($, on) => {
+  const saved: Record<string, unknown> = {}
+  on('command.register', () => ({ value: { command: 'model-share' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.status', () => ({ value: undefined }))
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', (_, e) => {
+    saved[e.key] = e.value
+    return { value: undefined }
+  })
+  on('session.usage', () => ({ value: { startedAt: 0, context: {}, rateLimits: [] } }))
+  on('process.run', () => ({ value: { exitCode: 0, stdout: JSON.stringify(SPLIT_SCAN), stderr: '' } }))
+  on('clock.now', () => ({ value: Date.parse('2026-11-15T14:00:00.000Z') }))
+
+  const ran = await $.command.run({ command: 'model-share', args: '' })
+  expect(ran.text).toMatch(/Opus 5\.5 .*in [\d.]+[Mk] · out [\d.]+[Mk] · cached [\d.]+M/)
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await ui.find({ type: 'Text', text: /^in .* · out / })).toBeFalsy()
+  await ui.press({ key: 'split' })
+  const lines = await ui.findAll({ type: 'Text', text: /^in .* · out .* · cached / })
+  expect(lines.length).toBe(3)
+  expect(saved.showSplit).toBe(true)
+  await ui.unmount()
+})

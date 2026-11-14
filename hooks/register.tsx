@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { ModelRow, Snapshot } from '../types'
+import type { ModelRow, Snapshot, TokenSplit } from '../types'
 
 // Share of tokens per model across every Claude Code session on this computer,
 // for the current weekly limit window, shown in a pane and the status line.
@@ -16,6 +16,7 @@ const TRACK = '#3A3A3C'
 // calls, no tokens.
 const DEFAULT_REFRESH_MS = 3 * 60_000
 const REFRESH_KEY = 'refreshMs'
+const SPLIT_KEY = 'showSplit'
 // The choices offered in the pane; 0 is off.
 const INTERVALS = [
   { value: String(60_000), label: '1 min' },
@@ -32,11 +33,20 @@ type SavedLimit = { weekPct: number; resetsAt?: string; at: number }
 // The auto-refresh interval in ms (0 = off), kept in $.store across sessions.
 const refreshEvery = atom({ plugin: 'model-share', key: 'refreshMs' } as const, DEFAULT_REFRESH_MS)
 
+// Whether each model's row also shows its input / output / cached tokens,
+// kept in $.store across sessions.
+const showSplit = atom({ plugin: 'model-share', key: 'showSplit' } as const, false)
+
 const snapshot = atom({ plugin: 'model-share', key: 'snapshot' } as const, null, {
-  shape: 'snapshot-1',
+  shape: 'snapshot-2',
 })
 
-type Scan = { models: Record<string, number>; files: number; start: number }
+type Scan = {
+  models: Record<string, number>
+  split?: Record<string, TokenSplit>
+  files: number
+  start: number
+}
 
 // Brand-ish colors per model family, readable on dark and light.
 const COLORS: Record<string, string> = {
@@ -56,15 +66,33 @@ const pretty = (id: string): string => {
   return m[3] ? `${name} ${m[2]}.${m[3]}` : `${name} ${m[2]}`
 }
 
-const rowsOf = (models: Record<string, number>): ModelRow[] => {
+// Rows per display name: ids that read the same ("claude-opus-5-5" and its
+// 1M-context variant) are merged, their token splits summed.
+const rowsOf = (models: Record<string, number>, split: Record<string, TokenSplit> = {}): ModelRow[] => {
   const merged: Record<string, number> = {}
-  for (const [id, n] of Object.entries(models)) merged[pretty(id)] = (merged[pretty(id)] ?? 0) + n
+  const splits: Record<string, TokenSplit> = {}
+  for (const [id, n] of Object.entries(models)) {
+    const name = pretty(id)
+    merged[name] = (merged[name] ?? 0) + n
+    const one = split[id]
+    if (one) {
+      const sum = splits[name] ?? { input: 0, output: 0, cached: 0 }
+      splits[name] = {
+        input: sum.input + one.input,
+        output: sum.output + one.output,
+        cached: sum.cached + one.cached,
+      }
+    }
+  }
   const total = Object.values(merged).reduce((a, b) => a + b, 0)
   if (total === 0) return []
   return Object.entries(merged)
-    .map(([name, tokens]) => ({ name, tokens, pct: (tokens / total) * 100 }))
+    .map(([name, tokens]) => ({ name, tokens, pct: (tokens / total) * 100, split: splits[name] }))
     .sort((a, b) => b.pct - a.pct)
 }
+
+const splitLine = (t: TokenSplit) =>
+  `in ${fmtTokens(t.input)} · out ${fmtTokens(t.output)} · cached ${fmtTokens(t.cached)}`
 
 // Whole numbers in proportion to `values` that add up to exactly `total`
 // (largest remainder), so displayed figures and bar widths always agree.
@@ -164,7 +192,7 @@ const refresh = async ($: EngineInterface): Promise<Snapshot> => {
     if (r.exitCode !== 0) throw new Error(r.stderr.trim().split('\n').pop() || `scan exited ${r.exitCode}`)
     const scan = JSON.parse(r.stdout) as Scan
     snap = {
-      rows: rowsOf(scan.models), start: scan.start, resetsAt, weekPct, weekPctAt,
+      rows: rowsOf(scan.models, scan.split), start: scan.start, resetsAt, weekPct, weekPctAt,
       files: scan.files, updatedAt: await $.clock.now(),
     }
   } catch (err) {
@@ -194,6 +222,12 @@ const schedule = ($: EngineInterface, ms: number) => {
   timer = ms > 0 ? $.clock.every(ms, () => void refresh($)) : undefined
 }
 
+const toggleSplit = async ($: EngineInterface) => {
+  const next = !(await read($, showSplit))
+  await $.store.set(SPLIT_KEY, next)
+  await update($, showSplit, () => next)
+}
+
 const setRefreshEvery = async ($: EngineInterface, ms: number) => {
   await $.store.set(REFRESH_KEY, ms)
   await update($, refreshEvery, () => ms)
@@ -210,6 +244,8 @@ export const register: Register = on => {
     void $.ui.open({ id: PANE, title: TITLE })
     void refresh($)
     // Picks up usage from your other sessions while this one sits idle.
+    const isSplitSaved = (await $.store.get(SPLIT_KEY)) === true
+    await update($, showSplit, () => isSplitSaved)
     const saved = Number(await $.store.get(REFRESH_KEY))
     const ms = Number.isFinite(saved) && saved >= 0 ? saved : DEFAULT_REFRESH_MS
     await update($, refreshEvery, () => ms)
@@ -248,7 +284,7 @@ export const register: Register = on => {
     if (snap.error) return { text: `Model share: scan failed (${snap.error})` }
     const shares = sharesOf(snap)
     const rows = snap.rows
-      .map((x, i) => `${x.name.padEnd(14)} ${`${shares[i]}%`.padStart(4)}`)
+      .map((x, i) => `${x.name.padEnd(14)} ${`${shares[i]}%`.padStart(4)}${x.split ? `   ${splitLine(x.split)}` : ''}`)
       .join('\n')
     return {
       text: `${isPlaced ? 'Model share pane opened.' : 'Model share this week:'}${snap.weekPct !== undefined ? ` (${fmtPct(snap.weekPct)} of the weekly limit used)` : ''}\n${rows || 'No usage yet this week.'}`,
@@ -259,6 +295,7 @@ export const register: Register = on => {
     const { Box, Text, Button, Select } = $.ui.resolve(e)
     const snap = await read($, snapshot)
     const everyMs = await read($, refreshEvery)
+    const isSplit = await read($, showSplit)
 
     if (!snap) return <Text dimColor>Counting this week's usage…</Text>
 
@@ -317,15 +354,22 @@ export const register: Register = on => {
             <Text dimColor>No Claude Code usage yet this week.</Text>
           ) : (
             snap.rows.map((r, i) => (
-              <Box key={`row-${r.name}`} flexDirection="row" justifyContent="space-between">
-                <Box flexDirection="row" gap={1}>
-                  <Text color={colorOf(r.name)}>■</Text>
-                  <Text color={colorOf(r.name)} bold>{r.name}</Text>
+              <Box key={`row-${r.name}`} flexDirection="column">
+                <Box flexDirection="row" justifyContent="space-between">
+                  <Box flexDirection="row" gap={1}>
+                    <Text color={colorOf(r.name)}>■</Text>
+                    <Text color={colorOf(r.name)} bold>{r.name}</Text>
+                  </Box>
+                  <Box flexDirection="row" gap={2}>
+                    <Text dimColor>{fmtTokens(r.tokens)} tok</Text>
+                    <Text bold>{shares[i]}%</Text>
+                  </Box>
                 </Box>
-                <Box flexDirection="row" gap={2}>
-                  <Text dimColor>{fmtTokens(r.tokens)} tok</Text>
-                  <Text bold>{shares[i]}%</Text>
-                </Box>
+                {isSplit && r.split ? (
+                  <Box paddingLeft={2}>
+                    <Text dimColor>{splitLine(r.split)}</Text>
+                  </Box>
+                ) : null}
               </Box>
             ))
           )}
@@ -343,7 +387,14 @@ export const register: Register = on => {
             value={INTERVALS.some(o => o.value === String(everyMs)) ? String(everyMs) : undefined}
             onSelect={value => void setRefreshEvery($, Number(value))}
           />
-          <Button key="refresh" label="Refresh" onPress={() => void refresh($)} />
+          <Box flexDirection="row" gap={1}>
+            <Button
+              key="split"
+              label={isSplit ? 'Hide split' : 'In / out'}
+              onPress={() => void toggleSplit($)}
+            />
+            <Button key="refresh" label="Refresh" onPress={() => void refresh($)} />
+          </Box>
         </Box>
       </Box>
     )
