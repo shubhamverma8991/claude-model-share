@@ -2,20 +2,14 @@
 
 A [Claude Code](https://claude.com/claude-code) mod that shows **which models your weekly usage went to**, in a pane beside the chat.
 
-Think of your week like distance driven: if you've driven 10 km, how much of it was by car, bike or truck? Here, everything you used this week is 100%, and each model gets its share:
+Think of your week like distance driven: if you've driven 10 km, how much of it was by car, bike or truck? Here, everything you used this week is 100%, and each model gets its share.
+
+<p align="center">
+  <img src="assets/pane.png" alt="The Model share pane: 59% of the weekly limit used, ahead of pace, and this week's usage split Fable 5.2 37%, Sonnet 5.5 34%, Opus 5.5 29%" width="480">
+</p>
 
 ```
-MODEL SHARE · THIS WEEK                          59% used
-Used  ██████████████████████████░░░░░░░░░░░░░░░░░░░  59%
-● Ahead of pace · hits 100% ~Mon 3 PM
-Thu, Nov 12 7:30 PM → Thu, Nov 19 7:30 PM   resets in 5d 0h
-╭──────────────────────────────────────────────╮
-│ ■ Fable 5.2                   8.1M tok   37% │
-│ ■ Sonnet 5.5                  7.4M tok   34% │
-│ ■ Opus 5.5                    6.4M tok   29% │
-╰──────────────────────────────────────────────╯
-Claude Code only · 31 files · updated 7:35 PM
-Auto refresh [3 min ▾]                         [Refresh]
+/plugin install model-share --marketplace shubhamverma8991/claude-model-share
 ```
 
 ## What it shows
