@@ -91,8 +91,8 @@ const when = (ms: number) =>
     weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
   })
 const left = (ms: number) => {
-  const h = Math.max(0, Math.round(ms / 3_600_000))
-  return h >= 24 ? `${Math.floor(h / 24)}d ${h % 24}h` : `${h}h`
+  const hours = Math.max(0, Math.round(ms / 3_600_000))
+  return hours >= 24 ? `${Math.floor(hours / 24)}d ${hours % 24}h` : `${hours}h`
 }
 
 // Each model's share of what was used this week, whatever the limit stands
