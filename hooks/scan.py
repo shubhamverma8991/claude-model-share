@@ -2,7 +2,10 @@
 
 Usage: python3 -I scan.py <start_epoch_ms | auto>
 "auto" starts at the latest Thursday 7:30 pm, local time.
-Prints JSON: {"models": {model_id: weighted_tokens}, "files": n, "start": epoch_ms}
+Prints JSON: {"models": {model_id: weighted_tokens},
+             "split": {model_id: {"input": n, "output": n, "cached": n}},
+             "files": n, "start": epoch_ms}
+"input" is fresh input plus cache writes, "cached" is cache reads (raw counts).
 """
 import json, os, sys
 from datetime import datetime, timedelta
@@ -18,6 +21,7 @@ else:
     start = int(sys.argv[1]) / 1000
 seen = set()
 models = {}
+split = {}
 files = 0
 
 for dirpath, _, names in os.walk(root):
@@ -57,8 +61,13 @@ for dirpath, _, names in os.walk(root):
                 if key in seen:
                     continue
                 seen.add(key)
-                n = ((u.get('input_tokens') or 0) + (u.get('cache_creation_input_tokens') or 0)
-                     + (u.get('output_tokens') or 0) + 0.1 * (u.get('cache_read_input_tokens') or 0))
-                models[model] = models.get(model, 0) + n
+                fresh = (u.get('input_tokens') or 0) + (u.get('cache_creation_input_tokens') or 0)
+                out = u.get('output_tokens') or 0
+                cached = u.get('cache_read_input_tokens') or 0
+                models[model] = models.get(model, 0) + fresh + out + 0.1 * cached
+                one = split.setdefault(model, {'input': 0, 'output': 0, 'cached': 0})
+                one['input'] += fresh
+                one['output'] += out
+                one['cached'] += cached
 
-print(json.dumps({'models': models, 'files': files, 'start': int(start * 1000)}))
+print(json.dumps({'models': models, 'split': split, 'files': files, 'start': int(start * 1000)}))
