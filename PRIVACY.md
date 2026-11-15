@@ -7,7 +7,8 @@ model-share is a Claude Code mod that runs entirely on your own computer. It col
 ## What it reads
 
 - **Your Claude Code session files**, under `~/.claude/projects/` (or `$CLAUDE_CONFIG_DIR/projects/`). These files contain your conversations with Claude. The mod's script reads only the records of Claude's replies, and from each one uses only the model name, the token counts, the timestamp and the reply's ID (to count each reply once). It does not keep, display or pass on any message text.
-- **Your weekly limit figure and reset time**, which Claude Code itself provides.
+- **Your 5-hour and weekly limit figures and reset times**, and **this session's context usage** (estimated locally by Claude Code, with no API call), which Claude Code itself provides.
+- **Claude Code's Auto-compact setting**, to show whether it's on.
 
 ## What it stores
 
@@ -18,6 +19,10 @@ Three values, in Claude Code's own per-plugin storage on your computer:
 - the last weekly limit percentage a session saw (so clients that don't receive it can still show it).
 
 It keeps no usage history: totals are recounted from your session files each time and shown on screen only.
+
+## What it changes
+
+Only when you press its buttons: **Compact** compacts the current conversation the way `/compact` does, and **Auto compact** turns Claude Code's Auto-compact setting on or off the way `/config` does.
 
 ## What it sends
 

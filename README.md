@@ -14,6 +14,9 @@ Think of your week like distance driven: if you've driven 10 km, how much of it 
 
 ## What it shows
 
+- **5-hour limit** — how much of your 5-hour limit you've used, with where you'll land by its reset at this pace (e.g. "On pace for about 43% by reset · resets in 4h 52m").
+- **Context** — how full this session's context window is, split into messages, tools and other, with how much is free.
+- **Compact / Auto compact** — compact the conversation (same as `/compact`), or turn Claude Code's Auto-compact setting on or off.
 - **Weekly limit used** — the same "7-day" figure Claude Code reports, as a bar colored by pace:
   green when you're using it no faster than the week is passing, amber when slightly ahead, red when you'd run out more than a day before the reset. The line under it says when you'd hit 100% at this rate.
 - **Your weekly window** — when it started and when it resets (it follows your plan's 7-day reset, e.g. Thursday 7:30 PM to Thursday 7:30 PM), and resets with it.
@@ -61,6 +64,7 @@ claude plugin uninstall model-share
 
 - The **Model share** pane opens on its own when a session starts. Closed it? Type `/model-share`.
 - **Refresh** recounts now.
+- **Compact** compacts the conversation, like `/compact` (not while Claude is replying). **Auto compact: On/Off** flips Claude Code's own Auto-compact setting.
 - **In / out** shows or hides each model's input, output and cached tokens. Remembered across sessions.
 - **Auto refresh** picks how often it recounts while a session is open: 1, 3 (default), 5 or 10 minutes, or Off. Your choice is remembered across sessions.
 - Or by command: `/model-share every 5m` (also `every 90s`, `every off`; 30 seconds at least).
@@ -84,7 +88,9 @@ python3 -I <plugin folder>/hooks/scan.py <week start>
 
 `hooks/scan.py` is the script in this repository. Its only argument is the start of your weekly window (a number, or `auto`), and it runs in Python's isolated mode (`-I`). The mod starts it when a session opens, after each Claude reply, when your weekly limit figure changes, on **Refresh**, and on the auto-refresh timer. It never runs any other program and never runs code it downloads.
 
-**What it reads.** Your Claude Code session files under `~/.claude/projects/` (or `$CLAUDE_CONFIG_DIR/projects/`). These files hold your conversations. The script reads only the records of Claude's replies, and from each one keeps only the model name, the four token counts, the timestamp and the reply's ID (to count each reply once). It never keeps, prints or passes on message text. It prints one small JSON result: total tokens per model and the number of files read. The mod also reads your weekly limit figure from Claude Code.
+**What it reads.** Your Claude Code session files under `~/.claude/projects/` (or `$CLAUDE_CONFIG_DIR/projects/`). These files hold your conversations. The script reads only the records of Claude's replies, and from each one keeps only the model name, the four token counts, the timestamp and the reply's ID (to count each reply once). It never keeps, prints or passes on message text. It prints one small JSON result: total tokens per model and the number of files read. The mod also reads your 5-hour and weekly limit figures, and this session's context usage (from Claude Code's local estimate, with no API call), from Claude Code.
+
+**What it changes.** Only when you press its buttons: **Compact** runs Claude Code's own compaction (as `/compact` does), and **Auto compact** flips Claude Code's Auto-compact setting (as `/config` does). Nothing else.
 
 **What it sends.** Nothing. The mod makes no network requests and sends no data anywhere. What it works out is shown only on your screen, in its pane and the status line.
 

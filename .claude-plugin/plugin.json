@@ -1,7 +1,7 @@
 {
   "name": "model-share",
-  "version": "0.4.0",
-  "description": "A Claude Code pane showing which models your weekly usage went to (e.g. Fable 5.2 37% · Sonnet 5.5 34% · Opus 5.5 29%), with your weekly limit and pace.",
+  "version": "0.5.0",
+  "description": "A Claude Code pane showing which models your weekly usage went to (e.g. Fable 37% · Sonnet 34% · Opus 29%), with your 5-hour and weekly limits, pace, and context usage.",
   "icon": "./.claude-plugin/icon.png",
   "author": {
     "name": "shubhamverma8991",
