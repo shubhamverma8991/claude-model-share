@@ -37,6 +37,8 @@ const intervalLabel = (ms: number) =>
   ms <= 0 ? 'off' : ms % 60_000 === 0 ? `${ms / 60_000}m` : `${Math.round(ms / 1000)}s`
 
 type SavedLimit = { weekPct: number; resetsAt?: string; at: number }
+type SavedFive = { pct: number; resetsAt?: string; at: number }
+const FIVE_KEY = 'fiveHour'
 
 // The auto-refresh interval in ms (0 = off), kept in $.store across sessions.
 const refreshEvery = atom({ plugin: 'model-share', key: 'refreshMs' } as const, DEFAULT_REFRESH_MS)
@@ -235,7 +237,7 @@ const refresh = async ($: EngineInterface): Promise<Snapshot> => {
     const usage = await $.session.usage({ breakdown: 'summary' })
     context = contextOf(usage)
     const five = usage.rateLimits.find(r => r.kind === 'five_hour')
-    if (five) fiveHour = { pct: five.percentUsed, resetsAt: five.resetsAt }
+    if (five && Number.isFinite(five.percentUsed)) fiveHour = { pct: five.percentUsed, resetsAt: five.resetsAt }
     const week = usage.rateLimits.find(r => r.kind === 'seven_day')
     weekPct = week?.percentUsed
     const end = week?.resetsAt ? Date.parse(week.resetsAt) : NaN
@@ -266,6 +268,18 @@ const refresh = async ($: EngineInterface): Promise<Snapshot> => {
         resetsAt = saved.resetsAt
         start = savedEnd - WEEK_MS
       }
+    }
+  }
+
+  // The 5-hour figure, like the weekly one, doesn't reach every client:
+  // remember the last one any session saw, while its window is still open.
+  if (fiveHour) {
+    await $.store.set(FIVE_KEY, { pct: fiveHour.pct, resetsAt: fiveHour.resetsAt, at: now } satisfies SavedFive)
+  } else {
+    const saved = (await $.store.get(FIVE_KEY)) as SavedFive | undefined
+    const end = saved?.resetsAt ? Date.parse(saved.resetsAt) : NaN
+    if (saved && Number.isFinite(saved.pct) && end > now) {
+      fiveHour = { pct: saved.pct, resetsAt: saved.resetsAt, at: saved.at }
     }
   }
 
@@ -406,7 +420,11 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const table = $.ui.resolve(e)
     const { Box, Text, Button, Select } = table
-    const Svg = 'Svg' in table ? table.Svg : undefined
+    // Thin SVG bars only in the desktop app: VS Code draws an Svg at full
+    // width, which breaks the label / bar / figure row apart.
+    const Svg = e.surface === 'desktop' && 'Svg' in table ? table.Svg : undefined
+    // VS Code draws each spacing step much taller than the desktop app.
+    const space = e.surface === 'vscode' ? 0 : 1
     const snap = await read($, snapshot)
     const everyMs = await read($, refreshEvery)
     const isSplit = await read($, showSplit)
@@ -461,8 +479,8 @@ export const register: Register = on => {
           <Text dimColor>updated {clock(snap.updatedAt)}</Text>
         </Box>
 
-        <Box flexDirection="column" borderStyle="round" borderColor="subtle" paddingX={1} paddingY={1} gap={1}>
-          <Box flexDirection="column" gap={1}>
+        <Box flexDirection="column" borderStyle="round" borderColor="subtle" paddingX={1} paddingY={space} gap={space}>
+          <Box flexDirection="column" gap={space}>
             {snap.fiveHour && five
               ? meter(
                   '5 Hour',
@@ -483,8 +501,8 @@ export const register: Register = on => {
                   pace ? pace.weekGone / 100 : undefined,
                 )
               : null}
-            {snap.weekPctAt !== undefined ? (
-              <Text dimColor>Weekly limit as of {clock(snap.weekPctAt)}</Text>
+            {snap.weekPctAt !== undefined || snap.fiveHour?.at !== undefined ? (
+              <Text dimColor>Limits as of {clock(snap.weekPctAt ?? snap.fiveHour?.at ?? snap.updatedAt)}</Text>
             ) : null}
           </Box>
 
@@ -505,7 +523,7 @@ export const register: Register = on => {
                 <Text color={CONTEXT_COLOR}>Messages</Text> {fmtTokens(ctx.messages)} · <Text color={TOOLS_COLOR}>Tools</Text>{' '}
                 {fmtTokens(ctx.tools)} · Other {fmtTokens(ctx.other)}
               </Text>
-              <Box flexDirection="row" gap={1} marginTop={1}>
+              <Box flexDirection="row" gap={1} marginTop={space}>
                 <Button key="compact" label="Compact" onPress={() => void compactNow($)} />
                 {snap.autoCompact !== undefined ? (
                   <Button

@@ -4,7 +4,8 @@ export type TokenSplit = { input: number; output: number; cached: number }
 export type ModelRow = { name: string; pct: number; tokens: number; split?: TokenSplit }
 
 /** The 5-hour limit: percent used and when it resets. */
-export type FiveHour = { pct: number; resetsAt?: string }
+/** at: when another session read it, if this one didn't get the figure. */
+export type FiveHour = { pct: number; resetsAt?: string; at?: number }
 
 /** This session's context window: percent and tokens used, and where they go. */
 export type ContextUse = {

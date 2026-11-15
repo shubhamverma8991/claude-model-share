@@ -29,6 +29,7 @@ test('the pane shows each model with its share, on every surface', async ($, on)
   on('process.run', () => ({ value: { exitCode: 0, stdout: JSON.stringify(SCAN), stderr: '' } }))
   on('ui.status', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
+  on('store.get', () => ({ value: undefined }))
   on('clock.now', () => ({ value: Date.parse('2026-11-14T14:00:00.000Z') }))
 
   const ran = await $.command.run({ command: 'model-share', args: '' })
@@ -65,8 +66,13 @@ test('a client without the limit shows the one another session saw', async ($, o
       rateLimits: [{ kind: 'seven_day', percentUsed: undefined, resetsAt: '2026-11-19T14:00:00.000Z' }],
     },
   }))
-  on('store.get', () => ({
-    value: { weekPct: 59, resetsAt: '2026-11-19T14:00:00.000Z', at: Date.parse('2026-11-14T13:55:00.000Z') },
+  on('store.get', (_, e) => ({
+    value:
+      e.key === 'limit'
+        ? { weekPct: 59, resetsAt: '2026-11-19T14:00:00.000Z', at: Date.parse('2026-11-14T13:55:00.000Z') }
+        : e.key === 'fiveHour'
+          ? { pct: 17, resetsAt: '2026-11-14T18:00:00.000Z', at: Date.parse('2026-11-14T13:55:00.000Z') }
+          : undefined,
   }))
   on('process.run', () => ({ value: { exitCode: 0, stdout: JSON.stringify(SCAN), stderr: '' } }))
   on('clock.now', () => ({ value: Date.parse('2026-11-14T14:00:00.000Z') }))
@@ -74,7 +80,11 @@ test('a client without the limit shows the one another session saw', async ($, o
   await $.command.run({ command: 'model-share', args: '' })
   const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
   expect(await ui.find({ type: 'Text', text: /^59%$/ })).toBeTruthy()
-  expect(await ui.find({ type: 'Text', text: /Weekly limit as of/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /Limits as of/ })).toBeTruthy()
+  // VS Code: the 5-hour figure another session saw, and cell bars, not SVG
+  expect(await ui.find({ type: 'Text', text: /^5 Hour$/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /^17%$/ })).toBeTruthy()
+  expect((await ui.findAll({ type: 'Svg' })).length).toBe(0)
   await ui.unmount()
 })
 
