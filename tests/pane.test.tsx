@@ -41,7 +41,7 @@ test('the pane shows each model with its share, on every surface', async ($, on)
     expect(await ui.find({ type: 'Text', text: /^59%$/ })).toBeTruthy()
     // The limit meter: 59% used with 29% of the week gone is well ahead of
     // pace. No second bar for the week itself.
-    expect(await ui.find({ type: 'Text', text: /^Used$/ })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: /^Weekly$/ })).toBeTruthy()
     expect(await ui.find({ type: 'Text', text: /^Week$/ })).toBeFalsy()
     expect(await ui.find({ type: 'Text', text: /Ahead of pace · hits 100%/ })).toBeTruthy()
     // Each model's share of what was used: the week's usage is the whole.
@@ -138,5 +138,73 @@ test('In / out shows each model\'s input, output and cached tokens, and is saved
   const lines = await ui.findAll({ type: 'Text', text: /^in .* · out .* · cached / })
   expect(lines.length).toBe(3)
   expect(saved.showSplit).toBe(true)
+  await ui.unmount()
+})
+
+test('5-hour limit, context and the compact controls', async ($, on) => {
+  const calls: string[] = []
+  let autoCompact = true
+  on('command.register', () => ({ value: { command: 'model-share' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.status', () => ({ value: undefined }))
+  on('ui.toast', (_, e) => {
+    calls.push(`toast:${e.text}`)
+    return { value: undefined }
+  })
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('session.usage', () => ({
+    value: {
+      startedAt: 0,
+      rateLimits: [
+        // 2% used, 30 minutes into the 5-hour window: on pace for about 20%
+        { kind: 'five_hour', percentUsed: 2, resetsAt: '2026-11-15T18:30:00.000Z' },
+        { kind: 'seven_day', percentUsed: 65, resetsAt: '2026-11-19T14:00:00.000Z' },
+      ],
+      context: {
+        tokens: 395_000,
+        window: 1_000_000,
+        percent: 39.5,
+        breakdown: {
+          categories: [
+            { name: 'Messages', tokens: 341_000, color: 'x', isDeferred: false, kind: 'used' },
+            { name: 'System tools', tokens: 35_000, color: 'x', isDeferred: false, kind: 'used' },
+            { name: 'System prompt', tokens: 19_000, color: 'x', isDeferred: false, kind: 'used' },
+            { name: 'Free space', tokens: 572_000, color: 'x', isDeferred: false, kind: 'free' },
+          ],
+        },
+      },
+    },
+  }))
+  on('config.list', () => ({
+    value: [{ key: 'autoCompact', label: 'Auto-compact', kind: 'boolean', value: autoCompact, isLocked: false }],
+  }))
+  on('config.set', (_, e) => {
+    calls.push(`config:${e.key}=${e.value}`)
+    autoCompact = e.value === true
+    return { value: e.value }
+  })
+  on('session.compact', () => {
+    calls.push('compact')
+    return { skip: 'nothing to compact in a test' }
+  })
+  on('process.run', () => ({ value: { exitCode: 0, stdout: JSON.stringify(SPLIT_SCAN), stderr: '' } }))
+  on('clock.now', () => ({ value: Date.parse('2026-11-15T14:00:00.000Z') }))
+
+  await $.command.run({ command: 'model-share', args: '' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+
+  expect(await ui.find({ type: 'Text', text: /^5 hour$/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /On pace for about 20% by reset · resets in 4h 30m/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /^Context$/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /Messages 341k · Tools 35k · Other 19k/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /605k free of 1\.0M/ })).toBeTruthy()
+
+  await ui.press({ key: 'compact' })
+  expect(calls).toContain('compact')
+  expect(calls).toContain('toast:Compact skipped: nothing to compact in a test')
+
+  await ui.press({ key: 'auto-compact' })
+  expect(calls).toContain('config:autoCompact=false')
   await ui.unmount()
 })

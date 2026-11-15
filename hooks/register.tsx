@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { ModelRow, Snapshot, TokenSplit } from '../types'
+import type { ContextUse, FiveHour, ModelRow, Snapshot, TokenSplit } from '../types'
 
 // Share of tokens per model across every Claude Code session on this computer,
 // for the current weekly limit window, shown in a pane and the status line.
@@ -9,6 +9,8 @@ import type { ModelRow, Snapshot, TokenSplit } from '../types'
 const PANE = 'model-share'
 const TITLE = 'Model share'
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000
+const FIVE_HOURS_MS = 5 * 60 * 60 * 1000
+const CONTEXT_COLOR = '#5BC8E8'
 const LIMIT_KEY = 'limit'
 // The meter's quiet track.
 const TRACK = '#3A3A3C'
@@ -38,7 +40,7 @@ const refreshEvery = atom({ plugin: 'model-share', key: 'refreshMs' } as const, 
 const showSplit = atom({ plugin: 'model-share', key: 'showSplit' } as const, false)
 
 const snapshot = atom({ plugin: 'model-share', key: 'snapshot' } as const, null, {
-  shape: 'snapshot-2',
+  shape: 'snapshot-3',
 })
 
 type Scan = {
@@ -148,19 +150,92 @@ const paceOf = (used: number, start: number, reset: number, now: number): Pace |
   return { weekGone, tone: ratio > 1.5 ? 'error' : 'warning', text: `Ahead of pace · hits 100% ~${day}` }
 }
 
+// "4h 52m", "35m", "2d 3h": time left, compact.
+const leftHm = (ms: number) => {
+  const mins = Math.max(0, Math.round(ms / 60_000))
+  if (mins >= 24 * 60) return `${Math.floor(mins / 1440)}d ${Math.floor((mins % 1440) / 60)}h`
+  return mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`
+}
+
+// The 5-hour window's pace: where it lands by the reset at this rate.
+const fiveHourPace = (f: FiveHour, now: number) => {
+  const reset = f.resetsAt ? Date.parse(f.resetsAt) : NaN
+  if (Number.isNaN(reset)) return { tone: 'success' as const, text: '' }
+  const resetText = `resets in ${leftHm(reset - now)}`
+  const gone = (now - (reset - FIVE_HOURS_MS)) / FIVE_HOURS_MS
+  if (f.pct >= 100) return { tone: 'error' as const, text: `Limit reached · ${resetText}` }
+  if (gone < 0.03 || f.pct <= 0) return { tone: 'success' as const, text: resetText }
+  const projected = f.pct / gone
+  if (projected <= 100) {
+    return {
+      tone: projected <= 80 ? ('success' as const) : ('warning' as const),
+      text: `On pace for about ${Math.round(projected)}% by reset · ${resetText}`,
+    }
+  }
+  const hitsIn = ((now - (reset - FIVE_HOURS_MS)) * 100) / f.pct - (now - (reset - FIVE_HOURS_MS))
+  return { tone: 'error' as const, text: `Hits 100% in ~${leftHm(hitsIn)} · ${resetText}` }
+}
+
+// The context window, from the status line's figures and the local
+// /context estimate (no API call): messages, tools, and everything else used.
+const contextOf = (usage: Awaited<ReturnType<EngineInterface['session']['usage']>>): ContextUse | undefined => {
+  const c = usage.context
+  if (!c.window) return undefined
+  const parts = { messages: 0, tools: 0, other: 0 }
+  for (const cat of c.breakdown?.categories ?? []) {
+    if (cat.kind !== 'used' || cat.isDeferred) continue
+    if (cat.name === 'Messages') parts.messages += cat.tokens
+    else if (/tool/i.test(cat.name)) parts.tools += cat.tokens
+    else parts.other += cat.tokens
+  }
+  const used = c.tokens ?? c.breakdown?.totalTokens ?? parts.messages + parts.tools + parts.other
+  return { pct: c.percent ?? (used / c.window) * 100, used, window: c.window, ...parts }
+}
+
+// Compacts the conversation, as /compact does; refused while Claude replies.
+const compactNow = async ($: EngineInterface) => {
+  try {
+    const r = await $.session.compact()
+    $.ui.toast(r.skip ? `Compact skipped: ${r.skip}` : 'Conversation compacted.')
+  } catch {
+    $.ui.toast("Can't compact while Claude is replying. Try again when it's done.")
+  }
+  await refresh($)
+}
+
+// Claude Code's own Auto-compact setting, as /config shows and changes it.
+const toggleAutoCompact = async ($: EngineInterface) => {
+  const row = (await $.config.list()).find(r => r.key === 'autoCompact')
+  if (!row) return $.ui.toast('Auto-compact setting not found in this Claude Code version.')
+  const { deny } = await $.config.set({ key: 'autoCompact', value: row.value !== true })
+  if (deny) $.ui.toast(`Auto-compact not changed: ${deny}`)
+  await refresh($)
+}
+
 // Recount from the session files and publish the result.
 const refresh = async ($: EngineInterface): Promise<Snapshot> => {
   let start: number | 'auto' = 'auto'
   let resetsAt: string | undefined
   let weekPct: number | undefined
+  let fiveHour: FiveHour | undefined
+  let context: ContextUse | undefined
+  let autoCompact: boolean | undefined
   try {
-    const week = (await $.session.usage()).rateLimits.find(r => r.kind === 'seven_day')
+    const usage = await $.session.usage({ breakdown: 'summary' })
+    context = contextOf(usage)
+    const five = usage.rateLimits.find(r => r.kind === 'five_hour')
+    if (five) fiveHour = { pct: five.percentUsed, resetsAt: five.resetsAt }
+    const week = usage.rateLimits.find(r => r.kind === 'seven_day')
     weekPct = week?.percentUsed
     const end = week?.resetsAt ? Date.parse(week.resetsAt) : NaN
     if (!Number.isNaN(end)) {
       start = end - WEEK_MS
       resetsAt = week?.resetsAt
     }
+  } catch {}
+  try {
+    const row = (await $.config.list()).find(r => r.key === 'autoCompact')
+    if (typeof row?.value === 'boolean') autoCompact = row.value
   } catch {}
 
   // Some clients (the VS Code extension) don't get the limit's percentage.
@@ -193,11 +268,13 @@ const refresh = async ($: EngineInterface): Promise<Snapshot> => {
     const scan = JSON.parse(r.stdout) as Scan
     snap = {
       rows: rowsOf(scan.models, scan.split), start: scan.start, resetsAt, weekPct, weekPctAt,
+      fiveHour, context, autoCompact,
       files: scan.files, updatedAt: await $.clock.now(),
     }
   } catch (err) {
     snap = {
       rows: [], start: typeof start === 'number' ? start : 0, resetsAt, weekPct, weekPctAt, files: 0,
+      fiveHour, context, autoCompact,
       updatedAt: await $.clock.now(), error: err instanceof Error ? err.message : String(err),
     }
   }
@@ -308,7 +385,7 @@ export const register: Register = on => {
     // glyphs, so it draws the same width on every surface and font.
     const meter = (label: string, pct: number, fill: string, isStrong: boolean) => (
       <Box key={`meter-${label}`} flexDirection="row" alignItems="center" gap={1}>
-        <Box width={5}>
+        <Box width={7}>
           <Text dimColor>{label}</Text>
         </Box>
         <Box flexDirection="row" flexGrow={1} height={1} backgroundColor={TRACK}>
@@ -321,6 +398,10 @@ export const register: Register = on => {
         </Box>
       </Box>
     )
+
+    const five = snap.fiveHour ? fiveHourPace(snap.fiveHour, snap.updatedAt) : undefined
+    const ctx = snap.context
+    const ctxTone = ctx && ctx.pct >= 80 ? 'error' : ctx && ctx.pct >= 60 ? 'warning' : CONTEXT_COLOR
 
     const clock = (ms: number) =>
       new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
@@ -336,9 +417,15 @@ export const register: Register = on => {
             </Box>
           ) : null}
         </Box>
+        {snap.fiveHour && five ? (
+          <Box flexDirection="column" marginTop={1}>
+            {meter('5 hour', snap.fiveHour.pct, five.tone, true)}
+            {five.text ? <Text color={five.tone}>● <Text dimColor>{five.text}</Text></Text> : null}
+          </Box>
+        ) : null}
         {snap.weekPct !== undefined ? (
           <Box flexDirection="column" marginTop={1}>
-            {meter('Used', snap.weekPct, pace?.tone ?? 'claude', true)}
+            {meter('Weekly', snap.weekPct, pace?.tone ?? 'claude', true)}
             {pace ? <Text color={pace.tone}>● <Text dimColor>{pace.text}</Text></Text> : null}
           </Box>
         ) : null}
@@ -346,6 +433,28 @@ export const register: Register = on => {
           <Text dimColor>{when(snap.start)} → {when(reset)}</Text>
           <Text dimColor>resets in {left(reset - snap.updatedAt)}</Text>
         </Box>
+
+        {ctx ? (
+          <Box flexDirection="column" marginTop={1}>
+            {meter('Context', ctx.pct, ctxTone, true)}
+            <Box flexDirection="row" justifyContent="space-between">
+              <Text dimColor>
+                Messages {fmtTokens(ctx.messages)} · Tools {fmtTokens(ctx.tools)} · Other {fmtTokens(ctx.other)}
+              </Text>
+              <Text dimColor>{fmtTokens(Math.max(0, ctx.window - ctx.used))} free of {fmtTokens(ctx.window)}</Text>
+            </Box>
+            <Box flexDirection="row" gap={1} marginTop={1}>
+              <Button key="compact" label="Compact" onPress={() => void compactNow($)} />
+              {snap.autoCompact !== undefined ? (
+                <Button
+                  key="auto-compact"
+                  label={`Auto compact: ${snap.autoCompact ? 'On' : 'Off'}`}
+                  onPress={() => void toggleAutoCompact($)}
+                />
+              ) : null}
+            </Box>
+          </Box>
+        ) : null}
 
         <Box flexDirection="column" borderStyle="round" borderColor="subtle" paddingX={1} marginY={1}>
           {snap.error ? (
