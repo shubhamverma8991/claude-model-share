@@ -425,6 +425,9 @@ export const register: Register = on => {
     const Svg = e.surface === 'desktop' && 'Svg' in table ? table.Svg : undefined
     // VS Code draws each spacing step much taller than the desktop app.
     const space = e.surface === 'vscode' ? 0 : 1
+    // A little room above and below the limits box: VS Code counts spacing in
+    // whole rows, so a fraction of one; the desktop app's own scale elsewhere.
+    const padY = e.surface === 'vscode' ? 0.3 : 1
     const snap = await read($, snapshot)
     const everyMs = await read($, refreshEvery)
     const isSplit = await read($, showSplit)
@@ -479,7 +482,7 @@ export const register: Register = on => {
           <Text dimColor>updated {clock(snap.updatedAt)}</Text>
         </Box>
 
-        <Box flexDirection="column" borderStyle="round" borderColor="subtle" paddingX={1} paddingY={space} gap={space}>
+        <Box flexDirection="column" borderStyle="round" borderColor="subtle" paddingX={1} paddingY={padY} gap={space}>
           <Box flexDirection="column" gap={space}>
             {snap.fiveHour && five
               ? meter(
