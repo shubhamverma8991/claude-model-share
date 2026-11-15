@@ -11,6 +11,12 @@ const TITLE = 'Model share'
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000
 const FIVE_HOURS_MS = 5 * 60 * 60 * 1000
 const CONTEXT_COLOR = '#5BC8E8'
+const TOOLS_COLOR = '#A78BFA'
+const OTHER_COLOR = '#6E6E73'
+const TICK_COLOR = '#A1A1A6'
+const TONE_HEX = { success: '#7FB069', warning: '#D9A23B', error: '#E5534B' } as const
+// The desktop bar's thickness in CSS pixels.
+const BAR_PX = 6
 const LIMIT_KEY = 'limit'
 // The meter's quiet track.
 const TRACK = '#3A3A3C'
@@ -137,19 +143,6 @@ const statusLine = (snap: Snapshot) => {
 
 // How the week's usage compares with the time gone: on pace when the limit
 // used is no further along than the week, and when 100% comes at this rate.
-type Pace = { weekGone: number; tone: 'success' | 'warning' | 'error'; text: string }
-const paceOf = (used: number, start: number, reset: number, now: number): Pace | undefined => {
-  const weekGone = Math.min(100, Math.max(0, ((now - start) / (reset - start)) * 100))
-  if (weekGone < 2) return undefined
-  const ratio = used / weekGone
-  const hitsFullAt = start + ((now - start) * 100) / Math.max(used, 0.1)
-  const day = new Date(hitsFullAt).toLocaleString('en-US', { weekday: 'short', hour: 'numeric' })
-  if (used >= 100) return { weekGone, tone: 'error', text: 'Weekly limit reached' }
-  if (ratio <= 1) return { weekGone, tone: 'success', text: 'On pace · lasts the whole week' }
-  if (hitsFullAt >= reset) return { weekGone, tone: 'warning', text: 'A little ahead of pace · should last' }
-  return { weekGone, tone: ratio > 1.5 ? 'error' : 'warning', text: `Ahead of pace · hits 100% ~${day}` }
-}
-
 // "4h 52m", "35m", "2d 3h": time left, compact.
 const leftHm = (ms: number) => {
   const mins = Math.max(0, Math.round(ms / 60_000))
@@ -157,23 +150,41 @@ const leftHm = (ms: number) => {
   return mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`
 }
 
-// The 5-hour window's pace: where it lands by the reset at this rate.
+type Pace = { weekGone: number; tone: 'success' | 'warning' | 'error'; text: string }
+const paceOf = (used: number, start: number, reset: number, now: number): Pace | undefined => {
+  const weekGone = Math.min(100, Math.max(0, ((now - start) / (reset - start)) * 100))
+  if (weekGone < 2) return undefined
+  const ratio = used / weekGone
+  const hitsFullAt = start + ((now - start) * 100) / Math.max(used, 0.1)
+  const day = new Date(hitsFullAt).toLocaleString('en-US', { weekday: 'short', hour: 'numeric' })
+  const resets = `resets in ${leftHm(reset - now)}`
+  if (used >= 100) return { weekGone, tone: 'error', text: `Limit reached – ${resets}` }
+  if (ratio <= 1) return { weekGone, tone: 'success', text: `On pace – ${resets}` }
+  if (hitsFullAt >= reset) return { weekGone, tone: 'warning', text: `Slightly ahead, should last – ${resets}` }
+  return { weekGone, tone: ratio > 1.5 ? 'error' : 'warning', text: `Hits 100% ~${day} – ${resets}` }
+}
+
+
+// The 5-hour window's pace: where it lands by the reset at this rate, and how
+// much of the window has gone (for the bar's even-pace tick).
 const fiveHourPace = (f: FiveHour, now: number) => {
   const reset = f.resetsAt ? Date.parse(f.resetsAt) : NaN
-  if (Number.isNaN(reset)) return { tone: 'success' as const, text: '' }
-  const resetText = `resets in ${leftHm(reset - now)}`
-  const gone = (now - (reset - FIVE_HOURS_MS)) / FIVE_HOURS_MS
-  if (f.pct >= 100) return { tone: 'error' as const, text: `Limit reached · ${resetText}` }
-  if (gone < 0.03 || f.pct <= 0) return { tone: 'success' as const, text: resetText }
+  if (Number.isNaN(reset)) return { tone: 'success' as const, text: '', gone: undefined }
+  const resets = `resets in ${leftHm(reset - now)}`
+  const elapsed = now - (reset - FIVE_HOURS_MS)
+  const gone = Math.min(1, Math.max(0, elapsed / FIVE_HOURS_MS))
+  if (f.pct >= 100) return { tone: 'error' as const, text: `Limit reached – ${resets}`, gone }
+  if (gone < 0.03 || f.pct <= 0) return { tone: 'success' as const, text: resets, gone }
   const projected = f.pct / gone
   if (projected <= 100) {
     return {
       tone: projected <= 80 ? ('success' as const) : ('warning' as const),
-      text: `On pace for about ${Math.round(projected)}% by reset · ${resetText}`,
+      text: `On pace for ~${Math.round(projected)}% by reset – ${resets}`,
+      gone,
     }
   }
-  const hitsIn = ((now - (reset - FIVE_HOURS_MS)) * 100) / f.pct - (now - (reset - FIVE_HOURS_MS))
-  return { tone: 'error' as const, text: `Hits 100% in ~${leftHm(hitsIn)} · ${resetText}` }
+  const hitsIn = (elapsed * 100) / f.pct - elapsed
+  return { tone: 'error' as const, text: `Hits 100% in ~${leftHm(hitsIn)} – ${resets}`, gone }
 }
 
 // The context window, from the status line's figures and the local
@@ -290,6 +301,30 @@ const refresh = async ($: EngineInterface): Promise<Snapshot> => {
   return snap
 }
 
+// A thin rounded bar as SVG, for surfaces that draw Svg: segments laid side by
+// side over a quiet track, and an optional tick (0..1) marking even pace.
+// Drawn wide and squeezed to its slot (preserveAspectRatio none).
+type Segment = { pct: number; color: string }
+const barSvg = (segments: Segment[], tick?: number) => {
+  const W = 1000
+  let x = 0
+  const rects = segments
+    .map(seg => {
+      const w = (Math.min(100, Math.max(0, seg.pct)) / 100) * W
+      const r = `<rect x="${x.toFixed(1)}" y="0" width="${Math.min(w, W - x).toFixed(1)}" height="${BAR_PX}" fill="${seg.color}"/>`
+      x += w
+      return r
+    })
+    .join('')
+  const tickRect =
+    tick === undefined ? '' : `<rect x="${Math.min(W - 6, Math.max(0, tick * W - 3)).toFixed(1)}" y="0" width="6" height="${BAR_PX}" fill="${TICK_COLOR}"/>`
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="4000" height="${BAR_PX}" viewBox="0 0 ${W} ${BAR_PX}" preserveAspectRatio="none">` +
+    `<clipPath id="r"><rect width="${W}" height="${BAR_PX}" rx="${BAR_PX / 2}" ry="${BAR_PX / 2}"/></clipPath>` +
+    `<g clip-path="url(#r)"><rect width="${W}" height="${BAR_PX}" fill="${TRACK}"/>${rects}${tickRect}</g></svg>`
+  )
+}
+
 // The running auto-refresh timer; a reload of the mod drops it and
 // session.start sets a new one.
 let timer: Timer | undefined
@@ -369,7 +404,9 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button, Select } = $.ui.resolve(e)
+    const table = $.ui.resolve(e)
+    const { Box, Text, Button, Select } = table
+    const Svg = 'Svg' in table ? table.Svg : undefined
     const snap = await read($, snapshot)
     const everyMs = await read($, refreshEvery)
     const isSplit = await read($, showSplit)
@@ -380,69 +417,93 @@ export const register: Register = on => {
     const reset = snap.resetsAt ? Date.parse(snap.resetsAt) : snap.start + WEEK_MS
     const pace =
       snap.weekPct !== undefined ? paceOf(snap.weekPct, snap.start, reset, snap.updatedAt) : undefined
-
-    // One labelled meter row: label, a rounded-feel bar, figure. Boxes, not
-    // glyphs, so it draws the same width on every surface and font.
-    const meter = (label: string, pct: number, fill: string, isStrong: boolean) => (
-      <Box key={`meter-${label}`} flexDirection="row" alignItems="center" gap={1}>
-        <Box width={7}>
-          <Text dimColor>{label}</Text>
-        </Box>
-        <Box flexDirection="row" flexGrow={1} height={1} backgroundColor={TRACK}>
-          <Box width={`${Math.round(Math.min(100, Math.max(0, pct)))}%`} height={1} backgroundColor={fill}>
-            <Text> </Text>
-          </Box>
-        </Box>
-        <Box width={4} justifyContent="flex-end">
-          <Text bold={isStrong} dimColor={!isStrong}>{fmtPct(pct)}</Text>
-        </Box>
-      </Box>
-    )
-
     const five = snap.fiveHour ? fiveHourPace(snap.fiveHour, snap.updatedAt) : undefined
     const ctx = snap.context
-    const ctxTone = ctx && ctx.pct >= 80 ? 'error' : ctx && ctx.pct >= 60 ? 'warning' : CONTEXT_COLOR
-
     const clock = (ms: number) =>
       new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 
-    return (
-      <Box flexDirection="column" paddingX={1}>
-        <Box flexDirection="row" justifyContent="space-between">
-          <Text bold>MODEL SHARE · THIS WEEK</Text>
-          {snap.weekPct !== undefined ? (
-            <Box flexDirection="row" gap={1}>
-              <Text bold color={pace?.tone ?? 'claude'}>{fmtPct(snap.weekPct)}</Text>
-              <Text dimColor>used</Text>
-            </Box>
-          ) : null}
+    // A bar: thin rounded SVG where the surface draws it, else coloured cells.
+    const bar = (key: string, alt: string, segments: Segment[], tick?: number) =>
+      Svg ? (
+        <Box key={key} flexGrow={1} flexShrink={1} height={1} alignItems="center">
+          <Svg alt={alt} source={barSvg(segments, tick)} height={BAR_PX} />
         </Box>
-        {snap.fiveHour && five ? (
-          <Box flexDirection="column" marginTop={1}>
-            {meter('5 hour', snap.fiveHour.pct, five.tone, true)}
-            {five.text ? <Text color={five.tone}>● <Text dimColor>{five.text}</Text></Text> : null}
+      ) : (
+        <Box key={key} flexDirection="row" flexGrow={1} height={1} backgroundColor={TRACK}>
+          {segments.map((seg, i) => (
+            <Box key={`${key}-${i}`} width={`${Math.round(Math.min(100, Math.max(0, seg.pct)))}%`} height={1} backgroundColor={seg.color}>
+              <Text> </Text>
+            </Box>
+          ))}
+        </Box>
+      )
+
+    // One meter: label, bar, figure on a row; a dim status line under it.
+    const meter = (label: string, pct: number, segments: Segment[], tone: string, note: string, tick?: number) => (
+      <Box key={`meter-${label}`} flexDirection="column">
+        <Box flexDirection="row" alignItems="center" gap={1}>
+          <Box width={7} flexShrink={0}>
+            <Text>{label}</Text>
           </Box>
-        ) : null}
-        {snap.weekPct !== undefined ? (
-          <Box flexDirection="column" marginTop={1}>
-            {meter('Weekly', snap.weekPct, pace?.tone ?? 'claude', true)}
-            {pace ? <Text color={pace.tone}>● <Text dimColor>{pace.text}</Text></Text> : null}
+          {bar(`bar-${label}`, `${label} ${fmtPct(pct)} used`, segments, tick)}
+          <Box width={4} flexShrink={0} justifyContent="flex-end">
+            <Text bold color={tone}>{fmtPct(pct)}</Text>
           </Box>
-        ) : null}
+        </Box>
+        {note ? <Text dimColor wrap="truncate-end">{note}</Text> : null}
+      </Box>
+    )
+
+    return (
+      <Box flexDirection="column" paddingX={1} gap={1}>
         <Box flexDirection="row" justifyContent="space-between">
-          <Text dimColor>{when(snap.start)} → {when(reset)}</Text>
-          <Text dimColor>resets in {left(reset - snap.updatedAt)}</Text>
+          <Text bold>MODEL SHARE</Text>
+          <Text dimColor>updated {clock(snap.updatedAt)}</Text>
+        </Box>
+
+        <Box flexDirection="column" gap={1}>
+          {snap.fiveHour && five
+            ? meter(
+                '5 Hour',
+                snap.fiveHour.pct,
+                [{ pct: snap.fiveHour.pct, color: TONE_HEX[five.tone] }],
+                TONE_HEX[five.tone],
+                five.text,
+                five.gone,
+              )
+            : null}
+          {snap.weekPct !== undefined
+            ? meter(
+                'Weekly',
+                snap.weekPct,
+                [{ pct: snap.weekPct, color: TONE_HEX[pace?.tone ?? 'success'] }],
+                TONE_HEX[pace?.tone ?? 'success'],
+                pace?.text ?? `resets in ${leftHm(reset - snap.updatedAt)}`,
+                pace ? pace.weekGone / 100 : undefined,
+              )
+            : null}
+          {snap.weekPctAt !== undefined ? (
+            <Text dimColor>Weekly limit as of {clock(snap.weekPctAt)}</Text>
+          ) : null}
         </Box>
 
         {ctx ? (
-          <Box flexDirection="column" marginTop={1}>
-            {meter('Context', ctx.pct, ctxTone, true)}
-            <Box flexDirection="row" justifyContent="space-between">
-              <Text dimColor>
-                Messages {fmtTokens(ctx.messages)} · Tools {fmtTokens(ctx.tools)} · Other {fmtTokens(ctx.other)}
-              </Text>
-              <Text dimColor>{fmtTokens(Math.max(0, ctx.window - ctx.used))} free of {fmtTokens(ctx.window)}</Text>
-            </Box>
+          <Box flexDirection="column">
+            {meter(
+              'Context',
+              ctx.pct,
+              [
+                { pct: (ctx.messages / ctx.window) * 100, color: CONTEXT_COLOR },
+                { pct: (ctx.tools / ctx.window) * 100, color: TOOLS_COLOR },
+                { pct: (ctx.other / ctx.window) * 100, color: OTHER_COLOR },
+              ],
+              ctx.pct >= 80 ? TONE_HEX.error : ctx.pct >= 60 ? TONE_HEX.warning : TONE_HEX.success,
+              '',
+            )}
+            <Text dimColor wrap="truncate-end">
+              <Text color={CONTEXT_COLOR}>Messages</Text> {fmtTokens(ctx.messages)} · <Text color={TOOLS_COLOR}>Tools</Text>{' '}
+              {fmtTokens(ctx.tools)} · Other {fmtTokens(ctx.other)}
+            </Text>
             <Box flexDirection="row" gap={1} marginTop={1}>
               <Button key="compact" label="Compact" onPress={() => void compactNow($)} />
               {snap.autoCompact !== undefined ? (
@@ -456,7 +517,7 @@ export const register: Register = on => {
           </Box>
         ) : null}
 
-        <Box flexDirection="column" borderStyle="round" borderColor="subtle" paddingX={1} marginY={1}>
+        <Box flexDirection="column" borderStyle="round" borderColor="subtle" paddingX={1}>
           {snap.error ? (
             <Text color="error">Scan failed: {snap.error}</Text>
           ) : snap.rows.length === 0 ? (
@@ -484,25 +545,24 @@ export const register: Register = on => {
           )}
         </Box>
 
-        <Text dimColor>
-          Claude Code only · {snap.files} files · updated {clock(snap.updatedAt)}
-          {snap.weekPctAt !== undefined ? ` · limit as of ${clock(snap.weekPctAt)}` : ''}
-        </Text>
-        <Box flexDirection="row" justifyContent="space-between" alignItems="center" marginTop={1}>
-          <Select
-            key="auto-refresh"
-            label="Auto refresh"
-            options={INTERVALS}
-            value={INTERVALS.some(o => o.value === String(everyMs)) ? String(everyMs) : undefined}
-            onSelect={value => void setRefreshEvery($, Number(value))}
-          />
-          <Box flexDirection="row" gap={1}>
-            <Button
-              key="split"
-              label={isSplit ? 'Hide split' : 'In / out'}
-              onPress={() => void toggleSplit($)}
+        <Box flexDirection="column">
+          <Text dimColor>Claude Code only · {snap.files} files this week</Text>
+          <Box flexDirection="row" justifyContent="space-between" alignItems="center" marginTop={1}>
+            <Select
+              key="auto-refresh"
+              label="Auto refresh"
+              options={INTERVALS}
+              value={INTERVALS.some(o => o.value === String(everyMs)) ? String(everyMs) : undefined}
+              onSelect={value => void setRefreshEvery($, Number(value))}
             />
-            <Button key="refresh" label="Refresh" onPress={() => void refresh($)} />
+            <Box flexDirection="row" gap={1}>
+              <Button
+                key="split"
+                label={isSplit ? 'Hide split' : 'In / out'}
+                onPress={() => void toggleSplit($)}
+              />
+              <Button key="refresh" label="Refresh" onPress={() => void refresh($)} />
+            </Box>
           </Box>
         </Box>
       </Box>

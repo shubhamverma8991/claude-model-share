@@ -37,13 +37,13 @@ test('the pane shows each model with its share, on every surface', async ($, on)
   for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
     expect((await ui.find({ type: 'Text', text: /^Fable 5\.2$/ }))?.text).toBe('Fable 5.2')
-    expect((await ui.find({ type: 'Text', text: /resets in/ }))?.text).toBe('resets in 5d 0h')
+    expect((await ui.find({ type: 'Text', text: /resets in/ }))?.text).toMatch(/– resets in 5d 0h$/)
     expect(await ui.find({ type: 'Text', text: /^59%$/ })).toBeTruthy()
     // The limit meter: 59% used with 29% of the week gone is well ahead of
     // pace. No second bar for the week itself.
     expect(await ui.find({ type: 'Text', text: /^Weekly$/ })).toBeTruthy()
     expect(await ui.find({ type: 'Text', text: /^Week$/ })).toBeFalsy()
-    expect(await ui.find({ type: 'Text', text: /Ahead of pace · hits 100%/ })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: /^Hits 100% ~/ })).toBeTruthy()
     // Each model's share of what was used: the week's usage is the whole.
     const shares = (await ui.findAll({ type: 'Text', text: /^\d+%$/ }))
       .map(t => Number(t.text.slice(0, -1)))
@@ -74,7 +74,7 @@ test('a client without the limit shows the one another session saw', async ($, o
   await $.command.run({ command: 'model-share', args: '' })
   const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
   expect(await ui.find({ type: 'Text', text: /^59%$/ })).toBeTruthy()
-  expect(await ui.find({ type: 'Text', text: /limit as of/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /Weekly limit as of/ })).toBeTruthy()
   await ui.unmount()
 })
 
@@ -194,11 +194,12 @@ test('5-hour limit, context and the compact controls', async ($, on) => {
   await $.command.run({ command: 'model-share', args: '' })
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
 
-  expect(await ui.find({ type: 'Text', text: /^5 hour$/ })).toBeTruthy()
-  expect(await ui.find({ type: 'Text', text: /On pace for about 20% by reset · resets in 4h 30m/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /^5 Hour$/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /On pace for ~20% by reset – resets in 4h 30m/ })).toBeTruthy()
   expect(await ui.find({ type: 'Text', text: /^Context$/ })).toBeTruthy()
+  // the desktop draws thin SVG bars: 5 Hour, Weekly and Context
+  expect((await ui.findAll({ type: 'Svg' })).length).toBe(3)
   expect(await ui.find({ type: 'Text', text: /Messages 341k · Tools 35k · Other 19k/ })).toBeTruthy()
-  expect(await ui.find({ type: 'Text', text: /605k free of 1\.0M/ })).toBeTruthy()
 
   await ui.press({ key: 'compact' })
   expect(calls).toContain('compact')
