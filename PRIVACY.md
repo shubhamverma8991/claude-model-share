@@ -12,11 +12,11 @@ model-share is a Claude Code mod that runs entirely on your own computer. It col
 
 ## What it stores
 
-Three values, in Claude Code's own per-plugin storage on your computer:
+Four values, in Claude Code's own per-plugin storage on your computer:
 
 - your auto-refresh setting,
 - whether the In / out token split is shown, and
-- the last weekly limit percentage a session saw (so clients that don't receive it can still show it).
+- the last weekly and 5-hour limit figures a session saw (so clients that don't receive them can still show them).
 
 It keeps no usage history: totals are recounted from your session files each time and shown on screen only.
 
@@ -30,7 +30,7 @@ Nothing. The mod makes no network requests, has no analytics or telemetry, and s
 
 ## Removing it
 
-Uninstalling the mod (`claude plugin uninstall model-share`) stops it from running. The three stored values are part of Claude Code's plugin data on your computer.
+Uninstalling the mod (`claude plugin uninstall model-share`) stops it from running. The stored values are part of Claude Code's plugin data on your computer.
 
 ## Contact
 

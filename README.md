@@ -94,7 +94,7 @@ python3 -I <plugin folder>/hooks/scan.py <week start>
 
 **What it sends.** Nothing. The mod makes no network requests and sends no data anywhere. What it works out is shown only on your screen, in its pane and the status line.
 
-**What it stores.** Three values in Claude Code's own per-plugin storage on your computer: your auto-refresh choice, whether the In / out split is shown, and the last weekly limit % a session saw (so clients that don't receive it, like the VS Code extension, can still show it).
+**What it stores.** Four values in Claude Code's own per-plugin storage on your computer: your auto-refresh choice, whether the In / out split is shown, and the last weekly and 5-hour limit figures a session saw (so clients that don't receive them, like the VS Code extension, can still show them).
 
 **What it hooks.** The mod adds a pane, a status line and one command. It doesn't change your prompts, Claude's replies or any tool call:
 
@@ -111,7 +111,7 @@ python3 -I <plugin folder>/hooks/scan.py <week start>
 - **Claude Code only.** Chats on claude.ai, the Claude apps, or Claude Code on other computers live on Anthropic's servers and aren't counted.
 - **Shares are of tokens, not of the limit.** Different models may use up your limit at different rates per token; Claude Code doesn't report the split by model. Cache reads count at 1/10 of a token, since they cost far less.
 - **The limit % needs a plan with a weekly limit.** Without one, the pane shows the shares alone and the week runs Thursday 7:30 PM to Thursday 7:30 PM local time.
-- Some clients (like the VS Code extension) don't receive the limit %; the pane then shows the last figure any of your sessions saw this week, marked "limit as of …".
+- Some clients (like the VS Code extension) don't receive the limit figures; the pane then shows the last ones any of your sessions saw, marked "Limits as of …".
 
 ## Develop
 
