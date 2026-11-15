@@ -5,7 +5,7 @@ A [Claude Code](https://claude.com/claude-code) mod that shows **which models yo
 Think of your week like distance driven: if you've driven 10 km, how much of it was by car, bike or truck? Here, everything you used this week is 100%, and each model gets its share.
 
 <p align="center">
-  <img src="assets/pane.gif" alt="The Model share pane refreshing: the weekly limit bar grows from 52% to 59% and turns red for ahead of pace, and the split updates to Fable 5.2 37%, Sonnet 5.5 34%, Opus 5.5 29%" width="480">
+  <img src="assets/pane.gif" alt="The Model share pane refreshing: 5-hour limit at 17% (hits 100% in about 1h 15m), weekly limit at 66%, context at 44% split into messages, tools and other, and this week's usage split Opus 5.5 44%, Fable 5.2 29%, Sonnet 5.5 27%" width="480">
 </p>
 
 ```
