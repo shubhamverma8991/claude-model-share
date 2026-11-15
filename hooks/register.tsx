@@ -461,61 +461,63 @@ export const register: Register = on => {
           <Text dimColor>updated {clock(snap.updatedAt)}</Text>
         </Box>
 
-        <Box flexDirection="column" gap={1}>
-          {snap.fiveHour && five
-            ? meter(
-                '5 Hour',
-                snap.fiveHour.pct,
-                [{ pct: snap.fiveHour.pct, color: TONE_HEX[five.tone] }],
-                TONE_HEX[five.tone],
-                five.text,
-                five.gone,
-              )
-            : null}
-          {snap.weekPct !== undefined
-            ? meter(
-                'Weekly',
-                snap.weekPct,
-                [{ pct: snap.weekPct, color: TONE_HEX[pace?.tone ?? 'success'] }],
-                TONE_HEX[pace?.tone ?? 'success'],
-                pace?.text ?? `resets in ${leftHm(reset - snap.updatedAt)}`,
-                pace ? pace.weekGone / 100 : undefined,
-              )
-            : null}
-          {snap.weekPctAt !== undefined ? (
-            <Text dimColor>Weekly limit as of {clock(snap.weekPctAt)}</Text>
+        <Box flexDirection="column" borderStyle="round" borderColor="subtle" paddingX={1} paddingY={1} gap={1}>
+          <Box flexDirection="column" gap={1}>
+            {snap.fiveHour && five
+              ? meter(
+                  '5 Hour',
+                  snap.fiveHour.pct,
+                  [{ pct: snap.fiveHour.pct, color: TONE_HEX[five.tone] }],
+                  TONE_HEX[five.tone],
+                  five.text,
+                  five.gone,
+                )
+              : null}
+            {snap.weekPct !== undefined
+              ? meter(
+                  'Weekly',
+                  snap.weekPct,
+                  [{ pct: snap.weekPct, color: TONE_HEX[pace?.tone ?? 'success'] }],
+                  TONE_HEX[pace?.tone ?? 'success'],
+                  pace?.text ?? `resets in ${leftHm(reset - snap.updatedAt)}`,
+                  pace ? pace.weekGone / 100 : undefined,
+                )
+              : null}
+            {snap.weekPctAt !== undefined ? (
+              <Text dimColor>Weekly limit as of {clock(snap.weekPctAt)}</Text>
+            ) : null}
+          </Box>
+
+          {ctx ? (
+            <Box flexDirection="column">
+              {meter(
+                'Context',
+                ctx.pct,
+                [
+                  { pct: (ctx.messages / ctx.window) * 100, color: CONTEXT_COLOR },
+                  { pct: (ctx.tools / ctx.window) * 100, color: TOOLS_COLOR },
+                  { pct: (ctx.other / ctx.window) * 100, color: OTHER_COLOR },
+                ],
+                ctx.pct >= 80 ? TONE_HEX.error : ctx.pct >= 60 ? TONE_HEX.warning : TONE_HEX.success,
+                '',
+              )}
+              <Text dimColor wrap="truncate-end">
+                <Text color={CONTEXT_COLOR}>Messages</Text> {fmtTokens(ctx.messages)} · <Text color={TOOLS_COLOR}>Tools</Text>{' '}
+                {fmtTokens(ctx.tools)} · Other {fmtTokens(ctx.other)}
+              </Text>
+              <Box flexDirection="row" gap={1} marginTop={1}>
+                <Button key="compact" label="Compact" onPress={() => void compactNow($)} />
+                {snap.autoCompact !== undefined ? (
+                  <Button
+                    key="auto-compact"
+                    label={`Auto compact: ${snap.autoCompact ? 'On' : 'Off'}`}
+                    onPress={() => void toggleAutoCompact($)}
+                  />
+                ) : null}
+              </Box>
+            </Box>
           ) : null}
         </Box>
-
-        {ctx ? (
-          <Box flexDirection="column">
-            {meter(
-              'Context',
-              ctx.pct,
-              [
-                { pct: (ctx.messages / ctx.window) * 100, color: CONTEXT_COLOR },
-                { pct: (ctx.tools / ctx.window) * 100, color: TOOLS_COLOR },
-                { pct: (ctx.other / ctx.window) * 100, color: OTHER_COLOR },
-              ],
-              ctx.pct >= 80 ? TONE_HEX.error : ctx.pct >= 60 ? TONE_HEX.warning : TONE_HEX.success,
-              '',
-            )}
-            <Text dimColor wrap="truncate-end">
-              <Text color={CONTEXT_COLOR}>Messages</Text> {fmtTokens(ctx.messages)} · <Text color={TOOLS_COLOR}>Tools</Text>{' '}
-              {fmtTokens(ctx.tools)} · Other {fmtTokens(ctx.other)}
-            </Text>
-            <Box flexDirection="row" gap={1} marginTop={1}>
-              <Button key="compact" label="Compact" onPress={() => void compactNow($)} />
-              {snap.autoCompact !== undefined ? (
-                <Button
-                  key="auto-compact"
-                  label={`Auto compact: ${snap.autoCompact ? 'On' : 'Off'}`}
-                  onPress={() => void toggleAutoCompact($)}
-                />
-              ) : null}
-            </Box>
-          </Box>
-        ) : null}
 
         <Box flexDirection="column" borderStyle="round" borderColor="subtle" paddingX={1}>
           {snap.error ? (
